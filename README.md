@@ -16,7 +16,7 @@ I impulse bought a TIG welder in Lidl and needed more excuses to use it. Somebod
 * Extremely compact chassis to allow as much armour coverage as possible.
 * Four independently controlled drive motors, for redundancy and torque vectoring.
 * Small, compact and powerful lifter mechanism.
-* As much RGB as possible while still having enough power for the bot to drive.
+* As much RGB as possible while still having enough power left over for the bot to drive.
 
 
 ## Mechanical Design
