@@ -54,6 +54,7 @@ bool BotMotion::begin() {
 }
 
 //fixme: doesn't work idk
+//ripped from https://github.com/jremington/MPU-6050-Fusion/blob/main/MPU6050_Mahony_calgyro.ino
 void BotMotion::_filter(IMU_t &filterIn) {
   static float Kp = 30;                       //filter gain
   static float Ki = 0;                        //filter intergral
