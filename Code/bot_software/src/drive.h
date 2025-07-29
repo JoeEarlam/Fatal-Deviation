@@ -142,15 +142,15 @@ Drive_t BotDrive::_tankDrive(int16_t t, int16_t s) {
     out.FL.duty = constrain(out.FL.duty, -MAX_PWM, MAX_PWM);
     out.FR.duty = constrain(out.FR.duty, -MAX_PWM, MAX_PWM);
 
-    if (out.FL.duty <= (MAX_PWM / 8)) {
-      if (out.FL.duty < 0) out.FL.duty = 0;
+    if (out.FL.duty < 0) out.FL.duty = 0;
+    else if (out.FL.duty <= (MAX_PWM / 8) && (out.FR.duty > MAX_PWM / 2)) {
       out.RL.duty = out.FR.duty / 8;
     } else {
       out.RL = out.FL;
     }
 
-    if (out.FR.duty <= (MAX_PWM / 8)) {
-      if (out.FR.duty < 0) out.FR.duty = 0;
+    if (out.FR.duty < 0) out.FR.duty = 0;
+    else if (out.FR.duty <= (MAX_PWM / 8) && (out.FL.duty > MAX_PWM / 2)) {
       out.RR.duty = out.RL.duty / 8;
     } else {
       out.RR = out.FR;
@@ -228,7 +228,7 @@ void BotDrive::setInputs(Radio_t inputs) {
 
   if ((_steering != 0) || (_throttle != 0)) {
     lastActiveTime = millis();
-    _deadZoneSteer = 0;
+    _deadZoneSteer = _deadZoneMov;
     _driveState = MOVING;
   }
 
