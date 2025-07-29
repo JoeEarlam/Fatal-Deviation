@@ -1,4 +1,4 @@
-#include "bot_software.h"
+#include "src/bot_software.h"
 
 #include <Wire.h>
 #include <Adafruit_NeoPixel.h>
@@ -6,12 +6,12 @@
 #include <TaskScheduler.h>
 #include <Servo.h>
 
-#include "motor.h"
-#include "drive.h"
-#include "IMU.h"
-#include "serialbuf.h"
+#include "src/motor.h"
+#include "src/drive.h"
+#include "src/IMU.h"
+#include "src/serialbuf.h"
 
-Adafruit_NeoPixel stripB(LED_COUNT, PIN_NEO_BRD, NEO_GRB + NEO_KHZ800);
+Adafruit_NeoPixel stripB(LED_COUNT, PIN_NEO_BRD, NEO_RGB + NEO_KHZ800);
 Adafruit_NeoPixel stripX(1, PIN_NEO_XIAO, NEO_GRB + NEO_KHZ800);
 Adafruit_PWMServoDriver pwm = Adafruit_PWMServoDriver();
 Adafruit_ADS1015 ads;
@@ -21,30 +21,27 @@ Motor FR(pwm, INA_FR, INB_FR, VREF_FR, NSLEEP_FR);
 Motor RL(pwm, INA_RL, INB_RL, VREF_RL, NSLEEP_RL);
 Motor RR(pwm, INA_RR, INB_RR, VREF_RR, NSLEEP_RR);
 
-//SerialPIO softSer(3, SerialPIO::NOPIN); //extra serial for telemetry output
-
 BotDrive drive;
 BotMotion motion;
 FlySkyIBus iBus;
 Servo weaponOut;
 SerialBuf serialBuf(Serial);
 
-//core0
-Task readRadio(0, TASK_FOREVER, &readRadioCB);
-Task readAnalogue(IBUS_PERIOD * 4, TASK_FOREVER, &readAnalogueCB);
-Task readImu(IBUS_PERIOD, TASK_FOREVER, &readImuCB);
-
-Task driveMaths(0, TASK_ONCE, &driveMathsCB);
-Task writePWM(0, TASK_ONCE, &writePWMCB);
-
 Scheduler ts0;
-
-//core1
-Task rgb(10, TASK_FOREVER, &rgbCB);
-Task debugSerial(0, TASK_FOREVER, &debugSerialCB);
-
 Scheduler ts1;
 
+//core0
+Task readRadio(0, TASK_FOREVER, &readRadioCB, &ts0);
+Task mainTask(0, TASK_ONCE, &mainTaskCB, &ts0);
+Task readAnalogue(IBUS_PERIOD * 4, TASK_FOREVER, &readAnalogueCB, &ts0);
+Task readImu(IBUS_PERIOD, TASK_FOREVER, &readImuCB, &ts0);
+Task writePWM(0, TASK_ONCE, &writePWMCB, &ts0);
+
+//core1
+Task inputHandler(0, TASK_ONCE, &inputHandlerCB, &ts1);
+Task weaponHandler(0, TASK_ONCE, &weaponCB, &ts1);
+Task rgb(10, TASK_FOREVER, &rgbCB, &ts1);
+Task debugSerial(0, TASK_FOREVER, &debugSerialCB, &ts1);
 
 Radio_t rxFrame;
 Drive_t driveVals;
@@ -53,23 +50,26 @@ Pwr_t pwrData;
 
 RadioState_t radioState;
 BotState_t botState;
+BattState_t battState;
 
 void setup() {
   rp2040.idleOtherCore();
 
-  setupSerial();
+  Serial.begin();
   setupiBus();
   setupInputs();
   setupOutputs();
   setupDrive();
   motion.begin();
   setupADC();
-  setupTasks();
   setupRGB();
 
   if (watchdog_enable_caused_reboot()) {
     botState = BOT_NOT_OK;
   }
+
+  ts0.enableAll();
+  ts1.enableAll();
 
   rp2040.wdt_begin(500);
   rp2040.resumeOtherCore();
@@ -89,26 +89,55 @@ void readRadioCB() {
     lastRadioTime = millis();
     radioState = RADIO_OK;
     rxFrame = parseChannels(chanData);
-    weaponOut.writeMicroseconds(rxFrame.button);
-    driveMaths.restart();
+    mainTask.restart();
   }
 
   if (millis() > (lastRadioTime + 100)) {
     lastRadioTime = millis();
     radioState = RADIO_DC;
     rxFrame = { 0 };
-    driveMaths.restart();
+    mainTask.restart();
   }
 }
 
-void driveMathsCB() {
-  drive.setIMU(imuData);
-  drive.setDriveAlgo(rxFrame.toggle);
-  drive.setInputs(rxFrame);
-  drive.doMaths();
+void mainTaskCB() {
+  if (radioState == RADIO_DC) {
+    rxFrame = { 0 };
+    drive.setInputs(rxFrame);
+    drive.doMaths();
+    writePWM.restart();
+  } else {
+    inputHandler.restart();
+    drive.setIMU(imuData);
+    drive.setInputs(rxFrame);
+    drive.doMaths();
+    writePWM.restart();
+  }
 
-  debugSerial.restart();
-  writePWM.restart();
+  Msg_t msg;
+  sprintf(msg.txt, "S:%d T:%d FL:%d FR:%d GY:", rxFrame.steering, rxFrame.throttle, driveVals.FL.duty, driveVals.FR.duty);
+  Serial.println(imuData.g.z);
+  serialBuf.pushMsg(msg);
+}
+
+void inputHandlerCB() {
+  static bool lastButtVal;
+  static int16_t lastSwVal;
+
+  if (rxFrame.button != lastButtVal) {
+    lastButtVal = rxFrame.button;
+    weaponOut.writeMicroseconds(WEAPON_UP);
+    weaponHandler.restartDelayed(500);
+  }
+
+  if (rxFrame.toggle != lastSwVal) {
+    lastSwVal = rxFrame.toggle;
+    weaponHandler.restart();
+  }
+}
+
+void weaponCB() {
+  weaponOut.writeMicroseconds(rxFrame.toggle);
 }
 
 void writePWMCB() {
@@ -118,6 +147,7 @@ void writePWMCB() {
   FR.setMotor(driveVals.FR);
   RL.setMotor(driveVals.RL);
   RR.setMotor(driveVals.RR);
+
   rp2040.wdt_reset();
 }
 
@@ -132,122 +162,104 @@ void readImuCB() {
 
 void readAnalogueCB() {
   pwrData = readPowerData();
-
-  if (pwrData.state == BATT_LOW) {
-    FL.setCurrentLimit(10);
-    FR.setCurrentLimit(10);
-    RL.setCurrentLimit(10);
-    RR.setCurrentLimit(10);
-  }
 }
 
 void rgbCB() {
+  if (radioState == RADIO_DC) {
+    fillRGB(0, 0, 255);
+  } else {
+    if (battState == BATT_OK) {
+      fillRainbow();
+    } else if (botState == BOT_NOT_OK) {
+      fillRGB(127, 127, 0);
+    } else {
+      fillRGB(255, 0, 0);
+    }
+  }
+}
+
+void fillRainbow() {
   static uint16_t hue;
   static uint32_t lastMillis;
   uint32_t currentMillis = millis();
 
   hue = hue + (currentMillis - lastMillis) * RGB_SPEED;
 
-  if (radioState == RADIO_DC) {
-    stripB.fill(stripB.Color(0, 0, 255));
-    stripX.fill(stripX.Color(0, 0, 255));
-  } else {
-    if (pwrData.state == BATT_LOW) {
-      stripB.fill(stripB.Color(255, 0, 0));
-      stripX.fill(stripX.Color(255, 0, 0));
-    } else {
-      stripB.rainbow(hue);
-      stripX.rainbow(hue);
-    }
-  }
-
-  stripB.show();
+  stripB.rainbow(hue);
+  stripX.rainbow(hue);
   stripX.show();
+  stripB.show();
 
   lastMillis = currentMillis;
+}
+
+void fillRGB(uint8_t r, uint8_t g, uint8_t b) {
+  stripB.fill(stripB.Color(r, g, b));
+  stripX.fill(stripX.Color(g, r, b));
+  stripB.show();
+  stripX.show();
 }
 
 Radio_t parseChannels(uint16_t (&chanData)[IBUS_CHANNELS]) {
   Radio_t thisFrame;
 
-  thisFrame.steering = map(chanData[0], 1000, 2000, 100, -100);
-  thisFrame.throttle = map(chanData[1], 1000, 2000, -100, 100);
-  thisFrame.button = chanData[2];
-  thisFrame.toggle = map(chanData[3], 1000, 2000, 0, 2);
+  thisFrame.steering = map(chanData[0], 1050, 1950, MAX_PWM, -MAX_PWM);
+  thisFrame.throttle = map(chanData[1], 1050, 1950, -MAX_PWM, MAX_PWM);
+  thisFrame.button = map(chanData[2], 1000, 2000, 0, 1);
+  thisFrame.toggle = chanData[3];
   thisFrame.knobL = map(chanData[4], 1000, 2000, 0, 100);
-  thisFrame.knobR = map(chanData[5], 1000, 2000, 0, 100);
+  thisFrame.knobR = map(chanData[5], 1000, 2000, 10, 200);
+
   return thisFrame;
 }
 
+//10mR shunt
+//10mV/A
 Pwr_t readPowerData() {
   Pwr_t pwr;
 
   pwr.v = readBattVolts();
-  pwrData.state = getBattState();
+  battState = getBattState();
 
-  pwr.iFL = readShunt(MOT_FL);
-  pwr.iFR = readShunt(MOT_FR);
-  pwr.iRL = readShunt(MOT_RL);
-  pwr.iRR = readShunt(MOT_RR);
+  pwr.iFL = ads.computeVolts(ads.readADC_SingleEnded(0)) * 100;
+  pwr.iFR = ads.computeVolts(ads.readADC_SingleEnded(2)) * 100;
+  pwr.iRL = ads.computeVolts(ads.readADC_SingleEnded(1)) * 100;
+  pwr.iRR = ads.computeVolts(ads.readADC_SingleEnded(3)) * 100;
 
   return pwr;
 }
 
 BattState_t getBattState() {
-  static uint32_t lowBattMillis;
+  float lowBattRst = LOW_BATT_VOLTS + 0.2;
+  static bool lowBattEvent;
 
-  if ((pwrData.v < LOW_BATT_VOLTS) && (lowBattMillis == 0)) {
-    lowBattMillis = millis() + 2000;
+  if (pwrData.v < LOW_BATT_VOLTS) {
+    lowBattEvent = true;
+  }
+  if (pwrData.v > lowBattRst) {
+    lowBattEvent = false;
   }
 
-  if ((pwrData.v > LOW_BATT_VOLTS) && (millis() < lowBattMillis)) {
-    lowBattMillis = 0;
-  }
-
-  if ((pwrData.v < LOW_BATT_VOLTS) && (millis() > lowBattMillis)) {
+  if (lowBattEvent) {
     return BATT_LOW;
-  } else return BATT_OK;
+  } else {
+    return BATT_OK;
+  }
 }
 
-//Fixme: needs cal
 //10K/2K2 voltage divider
 //10V = 1.803V @ ADC
 float readBattVolts() {
   float adc = analogRead(PIN_V_BATT);
+
   const float vRef = 3.3;
   const uint16_t fsr = 1023;
 
   adc = adc * (vRef / fsr);
 
-  return adc * 5.55;
+  return adc * 5.57;  //(10/1.803v)+0.02 for calibration
 }
 
-//10mR shunt
-//10mV/A
-float readShunt(uint8_t shunt) {
-  float adc;
-
-  switch (shunt) {
-    case MOT_FL:
-      adc = ads.readADC_SingleEnded(0);
-      break;
-    case MOT_FR:
-      adc = ads.readADC_SingleEnded(2);
-      break;
-    case MOT_RL:
-      adc = ads.readADC_SingleEnded(1);
-      break;
-    case MOT_RR:
-      adc = ads.readADC_SingleEnded(3);
-      break;
-    default:
-      return 0;
-  }
-
-  adc = ads.computeVolts(adc) * 100;
-
-  return adc;
-}
 
 void loop() {
   ts0.execute();

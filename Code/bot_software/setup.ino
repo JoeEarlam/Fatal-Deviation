@@ -1,8 +1,3 @@
-void setupSerial() {
-  Serial.begin();
-  //softSer.begin(115200);
-}
-
 void setupInputs() {
   analogReadResolution(10);
   pinMode(PIN_DRV_FAULT, INPUT);
@@ -10,7 +5,7 @@ void setupInputs() {
 
 void setupOutputs() {
   weaponOut.attach(PIN_WEAP);
-  weaponOut.writeMicroseconds(1500);
+  weaponOut.writeMicroseconds(WEAPON_DN);
 
   pinMode(PIN_PWM_EN, OUTPUT);
   digitalWrite(PIN_PWM_EN, LOW);
@@ -33,7 +28,7 @@ void setupADC() {
 void setupDrive() {
   pwm.begin();
   pwm.setOscillatorFrequency(27000000);
-  pwm.setPWMFreq(1600);
+  pwm.setPWMFreq(1000);
   Wire.setClock(400000);
 
   drive.begin();
@@ -41,26 +36,12 @@ void setupDrive() {
   FR.begin();
   RL.begin();
   RR.begin();
-}
 
-void setupTasks() {
-  ts0.addTask(readRadio);
-  ts0.addTask(writePWM);
-  ts0.addTask(driveMaths);
-  ts0.addTask(readAnalogue);
-  ts0.addTask(readImu);
-
-  readRadio.enable();
-  driveMaths.enable();
-  writePWM.enable();
-  readAnalogue.enable();
-  readImu.enable();
-
-  ts1.addTask(debugSerial);
-  ts1.addTask(rgb);
-
-  rgb.enable();
-  debugSerial.enable();
+  uint16_t iLim = 90;
+  FL.setCurrentLimit(iLim);
+  FR.setCurrentLimit(iLim);
+  RL.setCurrentLimit(iLim);
+  RR.setCurrentLimit(iLim);
 }
 
 void setupRGB() {
@@ -70,9 +51,9 @@ void setupRGB() {
 
   stripX.begin();
   stripX.show();
-  stripX.setBrightness(16);
+  stripX.setBrightness(127);
 
   stripB.begin();
   stripB.show();
-  stripB.setBrightness(16);
+  stripB.setBrightness(127);
 }

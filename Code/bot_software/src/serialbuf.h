@@ -7,7 +7,7 @@
 
 struct Msg_t {
   uint32_t time;
-  char txt[32];
+  char txt[128];
 };
 
 class SerialBuf {
@@ -30,6 +30,8 @@ SerialBuf::SerialBuf(Stream& _serial) {
 }
 
 bool SerialBuf::pushMsg(Msg_t& msg) {
+
+ // msg.time = millis();
   bool overflow = _srlOutBuf.push(msg);
 
   return overflow;  //returns false if buffer overflows
@@ -39,8 +41,8 @@ void SerialBuf::sendBuffer() {
   while (!_srlOutBuf.isEmpty()) {
     Msg_t msg = _srlOutBuf.shift();
 
-    _serial->print(msg.time);
-    _serial->print(": ");
+   // _serial->print(msg.time);
+   // _serial->print(": ");
     _serial->print(msg.txt);
   }
 }

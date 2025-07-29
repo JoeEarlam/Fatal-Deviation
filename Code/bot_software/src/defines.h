@@ -36,6 +36,8 @@
 #define LED_COUNT 4
 #define RGB_SPEED 16
 #define IBUS_PERIOD 7
-#define LOW_BATT_VOLTS 9.5
+#define LOW_BATT_VOLTS 10.5
+#define WEAPON_DN 1000
+#define WEAPON_UP 2000
 
 #endif

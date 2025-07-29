@@ -11,7 +11,6 @@ enum RadioState_t {
 enum BattState_t {
   BATT_OK,
   BATT_LOW,
-  BATT_WARNING,
 };
 
 enum BotState_t {
@@ -33,9 +32,6 @@ struct Pwr_t {
   float v;
 
   float watts = (iFL + iFR + iRL + iRR) * v;
-
-  BattState_t state;
 };
-
 
 #endif
