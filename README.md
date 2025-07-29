@@ -4,9 +4,15 @@ Fatal Deviation is my 1.5KG beetleweight lifter, with independent 4WD and electr
 
 This repository is not intended to be instructional - this isn't a full open-source project, but a reference for myself and others who want to see how the sausage is made. If you do build your own (or something similar), please let me know, I'd love to see more weird tiny beetleweights on the scene!
 
+For more information on the design and build process, please check out my build thread: https://forum.bristolbotbuilders.com/t/fatal-deviation-my-over-engineered-beetleweight/232
+
 ![Photo](Images/photo.jpg)
 
-The night before Bristol Bot Builders' Summer Showdown, July 2025
+TPU front end, the night before Bristol Bot Builders' Summer Showdown, July 2025
+
+![Photo 1](Images/photo1.jpg)
+
+Steel front end, for Robodojo, May 2025
 
 ## Design Criteria and Overview
 
